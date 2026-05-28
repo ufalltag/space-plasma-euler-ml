@@ -84,14 +84,14 @@ def euler_solve(sigma, R, omega, H0_sq=1.0, N=2000):
         if ri > 0.0:
             dH_sq = (sigma / ri) * v[i]
             E_sq_i = y[i] / (ri * ri)
-            dv = 2.0 * sigma * y[i] / ri  # = 2 r sigma E^2
+            dv = 2.0 * sigma * y[i] / ri  # = 2 r sigma E^2 1 уравнение
         else:
             dH_sq = 0.0
             E_sq_i = 0.0
             dv = 0.0
 
         dy = ri * w[i]
-        dw = 2.0 * ri * mu0 * omega * H_sq[i]
+        dw = 2.0 * ri * mu0 * omega * H_sq[i] # 2 уравнение
 
         H_sq[i + 1] = H_sq[i] + h * dH_sq
         v[i + 1]    = v[i]    + h * dv
@@ -244,7 +244,7 @@ class NeuralNet:
         return zs, acts
 
     def predict(self, X):
-        return self._forward(X)[1][-1].ravel()
+        return self._forward(X)[1][-1].ravel() # Forward pass — получить предсказание
 
     def fit(self, X, y):
         self._init()
@@ -261,8 +261,8 @@ class NeuralNet:
                 ib = idx[s:s + self.batch_size]
                 Xb, yb = X[ib], y[ib]
                 zs, acts = self._forward(Xb)
-                # backprop
-                dz = (acts[-1] - yb) * 2.0 / Xb.shape[0]  # MSE grad
+                # backprop посчитать градиенты
+                dz = (acts[-1] - yb) * 2.0 / Xb.shape[0]  # MSE grad Loss function — то, что модель минимизирует во время обучения
                 grads_W, grads_b = [None] * len(self.W), [None] * len(self.W)
                 for i in reversed(range(len(self.W))):
                     a_prev = acts[i]
@@ -277,7 +277,7 @@ class NeuralNet:
                 for i in range(len(self.W)):
                     self.mW[i] = beta1 * self.mW[i] + (1 - beta1) * grads_W[i]
                     self.vW[i] = beta2 * self.vW[i] + (1 - beta2) * grads_W[i] ** 2
-                    self.W[i] -= lr_t * self.mW[i] / (np.sqrt(self.vW[i]) + eps)
+                    self.W[i] -= lr_t * self.mW[i] / (np.sqrt(self.vW[i]) + eps) # Обновить
                     self.mb[i] = beta1 * self.mb[i] + (1 - beta1) * grads_b[i]
                     self.vb[i] = beta2 * self.vb[i] + (1 - beta2) * grads_b[i] ** 2
                     self.b[i] -= lr_t * self.mb[i] / (np.sqrt(self.vb[i]) + eps)
@@ -360,9 +360,9 @@ def generate_dataset(i_var, N_euler=400):
 # 5. Главный пайплайн: для каждого case прогоняем расчёт и обучение
 # =============================================================================
 
-def train_and_eval(i_var, X, y, target_name, feature_names):
-    """Обучает модель, соответствующую case=i_var%4, на (X,y); возвращает результаты."""
-    case = i_var % 4
+def train_and_eval(i_var, X, y, target_name, feature_names, force_case=None):
+    """Обучает модель на (X,y); force_case переопределяет выбор модели."""
+    case = force_case if force_case is not None else i_var % 4
     # Простой train/test split (80/20)
     rng = np.random.default_rng(42 + i_var)
     n = X.shape[0]
@@ -395,7 +395,7 @@ def train_and_eval(i_var, X, y, target_name, feature_names):
     pred_tr = model.predict(Xs_tr) * sd_y + mu_y
     pred_te = model.predict(Xs_te) * sd_y + mu_y
 
-    mse_tr = float(np.mean((pred_tr - y_tr) ** 2))
+    mse_tr = float(np.mean((pred_tr - y_tr) ** 2)) # метрика
     mse_te = float(np.mean((pred_te - y_te) ** 2))
     rmse_tr = float(np.sqrt(mse_tr))
     rmse_te = float(np.sqrt(mse_te))
@@ -474,6 +474,28 @@ def plot_case(res, savepath):
     plt.close(fig)
 
 
+def plot_model_comparison(results, savepath):
+    """Сравнительный график для нескольких моделей на одном датасете (предсказание vs истина)."""
+    n = len(results)
+    fig, axes = plt.subplots(1, n, figsize=(5 * n, 4.5))
+    i_var = results[0]['i_var']
+    fig.suptitle(f'Сравнение моделей — i={i_var}, цель: {results[0]["target_name"]}', fontsize=13)
+    for ax, res in zip(axes, results):
+        ax.scatter(res['y_tr'], res['pred_tr'], s=8, alpha=0.4, label='train')
+        ax.scatter(res['y_te'], res['pred_te'], s=12, color='C3', label='test')
+        lim = [min(res['y_tr'].min(), res['pred_tr'].min()),
+               max(res['y_tr'].max(), res['pred_tr'].max())]
+        ax.plot(lim, lim, 'k--', lw=1)
+        ax.set_title(f"{res['model_name']}\nRMSE={res['rmse_te']:.3e}  ({res['rel_rmse_te_pct']:.1f}%)")
+        ax.set_xlabel(f"истинное {res['target_name']}")
+        ax.set_ylabel('предсказание')
+        ax.legend(fontsize=8)
+        ax.grid(True, ls='--', alpha=0.5)
+    plt.tight_layout()
+    plt.savefig(savepath, dpi=140)
+    plt.close(fig)
+
+
 def plot_sample_solution(i_var, savepath):
     """Показать пример численного решения H^2(r), E^2(r) и H(r), E(r)."""
     H_R = 500.0
@@ -501,6 +523,256 @@ def plot_sample_solution(i_var, savepath):
     axes[1].set_ylabel('|E(r)|, В/м')
     axes[1].set_title(f'E(R) = {E_R:.3e}')
     axes[1].grid(True, ls='--', alpha=0.5)
+
+    plt.tight_layout()
+    plt.savefig(savepath, dpi=140)
+    plt.close(fig)
+
+
+# =============================================================================
+# 7. Бенчмарк: качество модели vs размер датасета
+# =============================================================================
+
+def generate_dataset_random(i_var, n_samples, N_euler=200, seed=0):
+    """Случайный датасет из n_samples точек равномерно из пространства параметров."""
+    rng = np.random.default_rng(seed)
+    f_i = 1.76 * max(i_var, 1)
+    H_R   = rng.uniform(100.0, 1000.0, n_samples)
+    sig   = np.exp(rng.uniform(np.log(1e-2), np.log(10.0), n_samples))
+    R     = rng.uniform(0.10, 1.00, n_samples)
+    f     = rng.uniform(0.5, 2.0, n_samples) * f_i
+    omega = 2.0 * np.pi * f * 1e9
+    rows = []
+    for h, s, r, om in zip(H_R, sig, R, omega):
+        _, _, _, H0, ER = solve_bvp(h, s, r, om, N=N_euler)
+        rows.append([h, s, r, om, H0, ER])
+    arr = np.array(rows)
+    return arr[:, :4], arr[:, 4], arr[:, 5]
+
+
+def _build_model(i_var):
+    case = i_var % 4
+    if case == 0:
+        return LinearRegressor(), 'Линейная регрессия'
+    elif case == 1:
+        return TanhPerceptron(n_features=4), 'Перцептрон (tanh)'
+    elif case == 2:
+        return ReLUNet(n_features=4), 'Нейросеть (ReLU)'
+    else:
+        return ELUNet(n_features=4), 'Нейросеть (ELU)'
+
+
+def _build_model_by_case(case):
+    if case == 0:
+        return LinearRegressor(), 'Линейная регрессия'
+    elif case == 1:
+        return TanhPerceptron(n_features=4), 'Перцептрон (tanh)'
+    elif case == 2:
+        return ReLUNet(n_features=4), 'Нейросеть (ReLU)'
+    else:
+        return ELUNet(n_features=4), 'Нейросеть (ELU)'
+
+
+def dataset_size_benchmark_all_models(i_var, sizes=None, N_euler=150):
+    """Бенчмарк всех 4 моделей на датасете одного варианта i.
+
+    Тестовая выборка фиксирована (400 точек, seed=999).
+    Обучающий пул — max(sizes) точек (seed=0).
+    Возвращает dict: {case: [{n, rmse, rel_pct, model_name}, ...]}
+    """
+    if sizes is None:
+        sizes = [64, 128, 256, 512, 1024, 2048]
+
+    even = (i_var % 2 == 0)
+    n_test = 400
+
+    print(f'  Генерация тестовой выборки (i={i_var}, {n_test} точек) ...')
+    X_te, H0_te, ER_te = generate_dataset_random(i_var, n_test, N_euler, seed=999)
+    y_te = ER_te if even else H0_te
+
+    max_n = max(sizes)
+    print(f'  Генерация пула ({max_n} точек) ...')
+    X_pool, H0_pool, ER_pool = generate_dataset_random(i_var, max_n, N_euler, seed=0)
+    y_pool = ER_pool if even else H0_pool
+
+    all_results = {}
+    for case in range(4):
+        _, model_name = _build_model_by_case(case)
+        print(f'  case={case} ({model_name}):')
+        size_res = []
+        for n in sizes:
+            X_tr = X_pool[:n]
+            y_tr = y_pool[:n]
+
+            Xs_tr, mu_x, sd_x = standardize(X_tr)
+            Xs_te_s = (X_te - mu_x) / sd_x
+            mu_y = y_tr.mean()
+            sd_y = max(float(y_tr.std()), 1e-12)
+            ys_tr = (y_tr - mu_y) / sd_y
+
+            model, _ = _build_model_by_case(case)
+            model.fit(Xs_tr, ys_tr)
+            pred = model.predict(Xs_te_s) * sd_y + mu_y
+
+            rmse = float(np.sqrt(np.mean((pred - y_te) ** 2)))
+            rel  = 100.0 * rmse / (np.mean(np.abs(y_te)) + 1e-30)
+            size_res.append({'n': n, 'rmse': rmse, 'rel_pct': rel, 'model_name': model_name})
+            print(f'    n={n:5d}: RMSE={rmse:.4e}  rel={rel:.2f}%')
+
+        all_results[case] = size_res
+    return all_results
+
+
+def plot_dataset_size_benchmark_all_models(i_var, all_results, savepath):
+    """Два графика: RMSE и отн. RMSE vs N для всех 4 моделей на датасете i_var."""
+    colors = ['C0', 'C1', 'C2', 'C3']
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig.suptitle(f'Все модели на датасете i={i_var} — качество vs размер выборки', fontsize=13)
+
+    for case, size_res in all_results.items():
+        ns   = [r['n']         for r in size_res]
+        rmse = [r['rmse']      for r in size_res]
+        rel  = [r['rel_pct']   for r in size_res]
+        lbl  = size_res[0]['model_name']
+        axes[0].plot(ns, rmse, 'o-', color=colors[case], label=lbl)
+        axes[1].plot(ns, rel,  'o-', color=colors[case], label=lbl)
+
+    for ax, ylabel, title in [
+        (axes[0], 'RMSE (тестовая выборка)', 'RMSE vs N'),
+        (axes[1], 'Отн. RMSE, %',            'Отн. RMSE (%) vs N'),
+    ]:
+        ax.set_xlabel('Размер обучающей выборки N')
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.set_xscale('log')
+        ax.legend(fontsize=9)
+        ax.grid(True, ls='--', alpha=0.5)
+
+    plt.tight_layout()
+    plt.savefig(savepath, dpi=140)
+    plt.close(fig)
+
+
+def dataset_size_benchmark(sizes=None, i_vars=None, N_euler=150):
+    """Для каждого варианта обучает модель на обучающих выборках разного размера.
+
+    Тестовая выборка фиксирована (400 точек, seed=999), чтобы RMSE было сопоставимым.
+    Обучающий пул — max(sizes) точек (seed=0), из которого берутся первые n строк.
+    """
+    if sizes is None:
+        sizes = [64, 128, 256, 512, 1024, 2048]
+    if i_vars is None:
+        i_vars = [0, 1, 2, 3]
+
+    n_test = 400
+    all_results = {}
+    for i_var in i_vars:
+        print(f'  Бенчмарк i={i_var}  (i%4={i_var % 4}): генерация данных ...')
+        even = (i_var % 2 == 0)
+
+        X_te, H0_te, ER_te = generate_dataset_random(i_var, n_test, N_euler, seed=999)
+        y_te = ER_te if even else H0_te
+
+        max_n = max(sizes)
+        X_pool, H0_pool, ER_pool = generate_dataset_random(i_var, max_n, N_euler, seed=0)
+        y_pool = ER_pool if even else H0_pool
+
+        size_res = []
+        for n in sizes:
+            X_tr = X_pool[:n]
+            y_tr = y_pool[:n]
+
+            Xs_tr, mu_x, sd_x = standardize(X_tr)
+            Xs_te_s = (X_te - mu_x) / sd_x
+            mu_y = y_tr.mean()
+            sd_y = max(float(y_tr.std()), 1e-12)
+            ys_tr = (y_tr - mu_y) / sd_y
+
+            model, _ = _build_model(i_var)
+            model.fit(Xs_tr, ys_tr)
+            pred = model.predict(Xs_te_s) * sd_y + mu_y
+
+            rmse = float(np.sqrt(np.mean((pred - y_te) ** 2)))
+            rel  = 100.0 * rmse / (np.mean(np.abs(y_te)) + 1e-30)
+            size_res.append({'n': n, 'rmse': rmse, 'rel_pct': rel})
+            print(f'    n={n:5d}: RMSE={rmse:.4e}  rel={rel:.2f}%')
+
+        all_results[i_var] = size_res
+    return all_results
+
+
+def plot_dataset_size_benchmark(all_results, savepath):
+    model_labels = {
+        0: 'Лин. регрессия (i=0)',
+        1: 'Перцептрон tanh (i=1)',
+        2: 'Нейросеть ReLU (i=2)',
+        3: 'Нейросеть ELU  (i=3)',
+        16: 'Лин. регрессия (i=16)',
+    }
+    colors = {0: 'C0', 1: 'C1', 2: 'C2', 3: 'C3', 16: 'C4'}
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig.suptitle('Качество модели vs размер обучающей выборки', fontsize=13)
+
+    for i_var, size_res in all_results.items():
+        ns   = [r['n']       for r in size_res]
+        rmse = [r['rmse']    for r in size_res]
+        rel  = [r['rel_pct'] for r in size_res]
+        c = colors.get(i_var, f'C{i_var % 10}')
+        lbl = model_labels.get(i_var, f'i={i_var} (i%4={i_var%4})')
+        axes[0].plot(ns, rmse, 'o-', color=c, label=lbl)
+        axes[1].plot(ns, rel,  'o-', color=c, label=lbl)
+
+    for ax, ylabel, title in [
+        (axes[0], 'RMSE (тестовая выборка)', 'RMSE vs N'),
+        (axes[1], 'Отн. RMSE, %',            'Отн. RMSE (%) vs N'),
+    ]:
+        ax.set_xlabel('Размер обучающей выборки N')
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.set_xscale('log')
+        ax.legend(fontsize=9)
+        ax.grid(True, ls='--', alpha=0.5)
+
+    plt.tight_layout()
+    plt.savefig(savepath, dpi=140)
+    plt.close(fig)
+    return fig
+
+
+def plot_dataset_size_benchmark_detail(all_results, savepath):
+    """Субграфики — по одному на каждый вариант i, отн. RMSE vs N."""
+    model_names = {
+        0: 'Линейная регрессия (i=0)',
+        1: 'Перцептрон (tanh, i=1)',
+        2: 'Нейросеть (ReLU, i=2)',
+        3: 'Нейросеть (ELU, i=3)',
+        16: 'Линейная регрессия (i=16)',
+    }
+    n_plots = len(all_results)
+    ncols = 3
+    nrows = (n_plots + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4.5 * nrows))
+    axes_flat = axes.flat if nrows > 1 else list(axes)
+    fig.suptitle('Кривые обучения (отн. RMSE % vs N) по вариантам', fontsize=13)
+
+    for idx, (i_var, size_res) in enumerate(all_results.items()):
+        ax = axes_flat[idx]
+        ns  = [r['n']       for r in size_res]
+        rel = [r['rel_pct'] for r in size_res]
+        ax.plot(ns, rel, 'o-', color=f'C{idx}', lw=2)
+        ax.set_xlabel('N (размер обучающей выборки)')
+        ax.set_ylabel('Отн. RMSE, %')
+        ax.set_title(model_names.get(i_var, f'i={i_var} (i%4={i_var%4})'))
+        ax.set_xscale('log')
+        ax.grid(True, ls='--', alpha=0.5)
+        ax.axhline(rel[-1], ls=':', color='gray', alpha=0.7,
+                   label=f'при N={ns[-1]}: {rel[-1]:.1f}%')
+        ax.legend(fontsize=8)
+
+    for idx in range(n_plots, nrows * ncols):
+        axes_flat[idx].set_visible(False)
 
     plt.tight_layout()
     plt.savefig(savepath, dpi=140)
@@ -591,6 +863,30 @@ def main():
             'rel_rmse_te_pct': res['rel_rmse_te_pct'],
         })
 
+    # ---- 6.25  Все 4 модели на датасете i=16
+    print('\n' + '=' * 70)
+    print('[2.16-all] Все модели для i=16')
+    print('=' * 70)
+    target_name_16 = 'E(R), В/м'  # 16 % 2 == 0
+    print('  Генерация датасета i=16 (1024 строк) ...')
+    X16, H0_16, ER_16 = generate_dataset(16, N_euler=300)
+    y16 = ER_16
+    all_models_i16 = []
+    for fc in range(4):
+        print(f'  Обучение модели case={fc} ...')
+        res16 = train_and_eval(16, X16, y16, target_name_16, feature_names, force_case=fc)
+        print(f'  {res16["model_name"]:36s}  RMSE={res16["rmse_te"]:.4e}  ({res16["rel_rmse_te_pct"]:.2f}%)')
+        plot_case(res16, os.path.join(FIG_DIR, f'case_i16_c{fc}.png'))
+        all_models_i16.append(res16)
+    plot_model_comparison(all_models_i16, os.path.join(FIG_DIR, 'case_i16_comparison.png'))
+    print(f'  Сравнительный график: figures/case_i16_comparison.png')
+
+    print('\n  Бенчмарк всех моделей для i=16 (RMSE vs N) ...')
+    bench_i16 = dataset_size_benchmark_all_models(16, sizes=[64, 128, 256, 512, 1024, 2048], N_euler=150)
+    plot_dataset_size_benchmark_all_models(
+        16, bench_i16, os.path.join(FIG_DIR, 'dataset_size_benchmark_i16.png'))
+    print(f'  График бенчмарка: figures/dataset_size_benchmark_i16.png')
+
     # ---- 6.3  Финальная сводка
     print('\n' + '=' * 70)
     print('СВОДКА')
@@ -601,6 +897,18 @@ def main():
         print(f"{s['i_var']:>4}  {s['case']:>4}  {s['model']:<36}  {s['target']:<12}  "
               f"{s['mse_te']:>12.4e}  {s['rel_rmse_te_pct']:>11.3f}")
     print(f'\nГрафики сохранены в: {FIG_DIR}')
+
+    # ---- 6.4  Бенчмарк: RMSE vs размер датасета
+    print('\n' + '=' * 70)
+    print('[3] Бенчмарк: качество модели vs размер обучающей выборки')
+    print('=' * 70)
+    bench_sizes = [64, 128, 256, 512, 1024, 2048]
+    bench_results = dataset_size_benchmark(sizes=bench_sizes, i_vars=[0, 1, 2, 3, 16], N_euler=150)
+    plot_dataset_size_benchmark(
+        bench_results, os.path.join(FIG_DIR, 'dataset_size_benchmark.png'))
+    plot_dataset_size_benchmark_detail(
+        bench_results, os.path.join(FIG_DIR, 'dataset_size_benchmark_detail.png'))
+    print(f'\n  Графики бенчмарка сохранены в: {FIG_DIR}')
 
     # сохраним сводку в текстовый файл
     with open(os.path.join(OUT_DIR, 'summary.txt'), 'w', encoding='utf-8') as f:
@@ -613,7 +921,14 @@ def main():
             f.write(f"{s['i_var']:>4}  {s['case']:>4}  {s['model']:<36}  {s['target']:<12}  "
                     f"{s['mse_te']:>12.4e}  {s['rel_rmse_te_pct']:>11.3f}\n")
 
-    return summary, (hs, eY, eW, pY, pW)
+        f.write('\n\nБенчмарк: RMSE vs размер обучающей выборки\n')
+        f.write('=' * 70 + '\n')
+        f.write(f"{'i%4':>4}  {'N':>6}  {'RMSE':>14}  {'rel_RMSE,%':>11}\n")
+        for i_var, size_res in bench_results.items():
+            for r in size_res:
+                f.write(f"{i_var:>4}  {r['n']:>6}  {r['rmse']:>14.4e}  {r['rel_pct']:>11.3f}\n")
+
+    return summary, (hs, eY, eW, pY, pW), bench_results
 
 
 if __name__ == '__main__':
